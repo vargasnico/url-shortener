@@ -1,6 +1,6 @@
 # URL Shortener
 
-A URL shortener API built with ASP.NET Core (.NET 10).
+A URL shortener API built with ASP.NET Core (.NET 10), Entity Framework Core and PostgreSQL.
 
 ## Endpoints
 
@@ -13,16 +13,27 @@ A URL shortener API built with ASP.NET Core (.NET 10).
 
 ## Running locally
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Docker.
 
 ```bash
+docker compose up -d                      # PostgreSQL on localhost:5432
 dotnet run --project src/UrlShortener.Api
 ```
 
-The API listens on `http://localhost:5259`. Example requests are in `src/UrlShortener.Api/UrlShortener.Api.http`.
+The API listens on `http://localhost:5259` and applies pending migrations on startup in Development.
+Example requests are in `src/UrlShortener.Api/UrlShortener.Api.http`.
+
+### Migrations
+
+```bash
+dotnet tool install -g dotnet-ef
+dotnet ef migrations add <Name> --project src/UrlShortener.Api --output-dir Data/Migrations
+```
 
 ## Tests
 
 ```bash
 dotnet test
 ```
+
+Integration tests start a disposable PostgreSQL container with [Testcontainers](https://dotnet.testcontainers.org/), so Docker must be running.

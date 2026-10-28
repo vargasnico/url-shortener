@@ -7,7 +7,7 @@ namespace UrlShortener.Api.Repositories;
 public interface ILinkRepository
 {
     /// <returns>false se já existir um link com o mesmo código.</returns>
-    bool TryAdd(Link link);
+    Task<bool> TryAddAsync(Link link, CancellationToken cancellationToken = default);
 
-    Link? GetByCode(string code);
+    Task<Link?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
 }

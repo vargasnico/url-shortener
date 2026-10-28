@@ -14,7 +14,7 @@ public class LinksController(ILinkRepository repository, ICodeGenerator codeGene
 
     // POST /links
     [HttpPost]
-    public ActionResult<LinkResponse> Create(CreateLinkRequest request)
+    public async Task<ActionResult<LinkResponse>> Create(CreateLinkRequest request, CancellationToken cancellationToken)
     {
         if (!IsValidHttpUrl(request.Url))
         {
@@ -26,7 +26,7 @@ public class LinksController(ILinkRepository repository, ICodeGenerator codeGene
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             var link = new Link { Code = codeGenerator.Generate(), OriginalUrl = request.Url };
-            if (repository.TryAdd(link))
+            if (await repository.TryAddAsync(link, cancellationToken))
             {
                 // 201 Created + header Location apontando para GET /links/{code}
                 return CreatedAtAction(nameof(Get), new { code = link.Code }, ToResponse(link));
@@ -38,17 +38,17 @@ public class LinksController(ILinkRepository repository, ICodeGenerator codeGene
 
     // GET /links/{code} → dados do link, sem redirecionar
     [HttpGet("{code}")]
-    public ActionResult<LinkResponse> Get(string code)
+    public async Task<ActionResult<LinkResponse>> Get(string code, CancellationToken cancellationToken)
     {
-        var link = repository.GetByCode(code);
+        var link = await repository.GetByCodeAsync(code, cancellationToken);
         return link is null ? NotFound() : ToResponse(link);
     }
 
     // GET /{code} → redireciona. A "/" inicial ignora o [Route("links")] da classe.
     [HttpGet("/{code}")]
-    public IActionResult RedirectToOriginal(string code)
+    public async Task<IActionResult> RedirectToOriginal(string code, CancellationToken cancellationToken)
     {
-        var link = repository.GetByCode(code);
+        var link = await repository.GetByCodeAsync(code, cancellationToken);
         return link is null ? NotFound() : Redirect(link.OriginalUrl);
     }
 

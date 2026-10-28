@@ -5,8 +5,8 @@ using UrlShortener.Api.Dtos;
 
 namespace UrlShortener.Api.Tests;
 
-public class LinksControllerTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+[Collection(ApiCollection.Name)]
+public class LinksControllerTests(ApiFactory factory)
 {
     // Sem seguir redirects: queremos ver o 302 em si, não a página de destino.
     private readonly HttpClient _client = factory.CreateClient(
