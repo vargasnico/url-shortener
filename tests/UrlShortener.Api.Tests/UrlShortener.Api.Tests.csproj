@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Encurtador.Api\Encurtador.Api.csproj" />
+    <ProjectReference Include="..\..\src\UrlShortener.Api\UrlShortener.Api.csproj" />
   </ItemGroup>
 
 </Project>

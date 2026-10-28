@@ -1,0 +1,26 @@
+@UrlShortener.Api_HostAddress = http://localhost:5259
+
+GET {{UrlShortener.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+# Encurta uma URL. Copie o "code" da resposta para as requisições abaixo.
+POST {{UrlShortener.Api_HostAddress}}/links
+Content-Type: application/json
+
+{
+  "url": "https://learn.microsoft.com/aspnet/core"
+}
+
+###
+
+# Dados do link, sem redirecionar
+GET {{UrlShortener.Api_HostAddress}}/links/PASTE_CODE_HERE
+
+###
+
+# Redireciona (302) para a URL original
+GET {{UrlShortener.Api_HostAddress}}/PASTE_CODE_HERE
+
+###

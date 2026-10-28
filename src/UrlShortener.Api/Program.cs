@@ -1,6 +1,13 @@
+using UrlShortener.Api.Repositories;
+using UrlShortener.Api.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Registro de serviços (injeção de dependência).
+// Singleton: o repositório em memória precisa ser o mesmo objeto em todas as requisições,
+// senão cada requisição veria um dicionário vazio.
+builder.Services.AddSingleton<ILinkRepository, InMemoryLinkRepository>();
+builder.Services.AddSingleton<ICodeGenerator, RandomCodeGenerator>();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 

@@ -1,6 +1,0 @@
-@Encurtador.Api_HostAddress = http://localhost:5259
-
-GET {{Encurtador.Api_HostAddress}}/health
-Accept: application/json
-
-###

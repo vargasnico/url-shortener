@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Encurtador.Api/Encurtador.Api.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/Encurtador.Api.Tests/Encurtador.Api.Tests.csproj" />
-  </Folder>
-</Solution>

@@ -9,7 +9,6 @@
   },
   "enabledPlugins": {
     "playwright@claude-plugins-official": true,
-    "learning-output-style@claude-plugins-official": true,
     "example-skills@anthropic-agent-skills": true
   }
 }
