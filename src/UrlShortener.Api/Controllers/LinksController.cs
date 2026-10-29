@@ -8,7 +8,7 @@ namespace UrlShortener.Api.Controllers;
 
 [ApiController]
 [Route("links")]
-public class LinksController(ILinkRepository repository, ICodeGenerator codeGenerator) : ControllerBase
+public class LinksController(ILinkRepository repository, IClickRepository clicks, ICodeGenerator codeGenerator) : ControllerBase
 {
     private const int MaxAttempts = 5;
 
@@ -44,13 +44,46 @@ public class LinksController(ILinkRepository repository, ICodeGenerator codeGene
         return link is null ? NotFound() : ToResponse(link);
     }
 
-    // GET /{code} → redireciona. A "/" inicial ignora o [Route("links")] da classe.
+    // GET /links/{code}/stats → cliques agregados pelo worker
+    [HttpGet("{code}/stats")]
+    public async Task<ActionResult<LinkStatsResponse>> GetStats(string code, CancellationToken cancellationToken)
+    {
+        var link = await repository.GetByCodeAsync(code, cancellationToken);
+        if (link is null)
+        {
+            return NotFound();
+        }
+
+        var daily = await clicks.GetDailyStatsAsync(link.Id, cancellationToken);
+        return new LinkStatsResponse(
+            link.Code,
+            daily.Sum(d => d.Clicks),
+            daily.Select(d => new DailyClicksResponse(d.Day, d.Clicks)).ToList());
+    }
+
+    // GET /{code} → registra o clique e redireciona. A "/" inicial ignora o [Route("links")] da classe.
     [HttpGet("/{code}")]
     public async Task<IActionResult> RedirectToOriginal(string code, CancellationToken cancellationToken)
     {
         var link = await repository.GetByCodeAsync(code, cancellationToken);
-        return link is null ? NotFound() : Redirect(link.OriginalUrl);
+        if (link is null)
+        {
+            return NotFound();
+        }
+
+        await clicks.RecordAsync(new ClickEvent
+        {
+            LinkId = link.Id,
+            UserAgent = Truncate(Request.Headers.UserAgent.ToString(), ClickEvent.UserAgentMaxLength),
+            Referrer = Truncate(Request.Headers.Referer.ToString(), ClickEvent.ReferrerMaxLength),
+        }, cancellationToken);
+
+        return Redirect(link.OriginalUrl);
     }
+
+    // Cabeçalhos vêm do cliente: podem faltar ou ser enormes.
+    private static string? Truncate(string value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? null : value[..Math.Min(value.Length, maxLength)];
 
     private static bool IsValidHttpUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri)

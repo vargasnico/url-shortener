@@ -13,6 +13,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
 
 // Scoped: um repositório (e um DbContext) por requisição.
 builder.Services.AddScoped<ILinkRepository, EfLinkRepository>();
+builder.Services.AddScoped<IClickRepository, EfClickRepository>();
 builder.Services.AddSingleton<ICodeGenerator, RandomCodeGenerator>();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

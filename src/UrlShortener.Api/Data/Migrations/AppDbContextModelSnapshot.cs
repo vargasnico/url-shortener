@@ -22,6 +22,48 @@ namespace UrlShortener.Api.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("UrlShortener.Api.Models.ClickEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("AggregatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aggregated_at");
+
+                    b.Property<DateTimeOffset>("ClickedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("clicked_at");
+
+                    b.Property<long>("LinkId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("link_id");
+
+                    b.Property<string>("Referrer")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("referrer");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("user_agent");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .HasDatabaseName("ix_click_events_pending")
+                        .HasFilter("aggregated_at IS NULL");
+
+                    b.HasIndex("LinkId");
+
+                    b.ToTable("click_events", (string)null);
+                });
+
             modelBuilder.Entity("UrlShortener.Api.Models.Link", b =>
                 {
                     b.Property<long>("Id")
@@ -53,6 +95,43 @@ namespace UrlShortener.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("links", (string)null);
+                });
+
+            modelBuilder.Entity("UrlShortener.Api.Models.LinkDailyStat", b =>
+                {
+                    b.Property<long>("LinkId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("link_id");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<int>("Clicks")
+                        .HasColumnType("integer")
+                        .HasColumnName("clicks");
+
+                    b.HasKey("LinkId", "Day");
+
+                    b.ToTable("link_daily_stats", (string)null);
+                });
+
+            modelBuilder.Entity("UrlShortener.Api.Models.ClickEvent", b =>
+                {
+                    b.HasOne("UrlShortener.Api.Models.Link", null)
+                        .WithMany()
+                        .HasForeignKey("LinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("UrlShortener.Api.Models.LinkDailyStat", b =>
+                {
+                    b.HasOne("UrlShortener.Api.Models.Link", null)
+                        .WithMany()
+                        .HasForeignKey("LinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

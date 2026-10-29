@@ -19,5 +19,15 @@ services:
       timeout: 3s
       retries: 10
 
+  stats-worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: postgresql://urlshortener:urlshortener@postgres:5432/urlshortener
+      INTERVAL_SECONDS: "10"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres-data:
