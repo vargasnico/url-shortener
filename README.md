@@ -1,8 +1,17 @@
 # URL Shortener
 
-A URL shortener API built with ASP.NET Core (.NET 10), Entity Framework Core and PostgreSQL.
+A URL shortener with an ASP.NET Core (.NET 10) API, PostgreSQL via Entity Framework Core, and a React + TypeScript front end.
 
-## Endpoints
+## Structure
+
+| Folder | Description |
+|---|---|
+| `src/UrlShortener.Api` | ASP.NET Core Web API |
+| `tests/UrlShortener.Api.Tests` | API integration tests (xUnit + Testcontainers) |
+| `web/` | React + TypeScript front end (Vite) |
+| `e2e/` | End-to-end tests (Playwright) |
+
+## API endpoints
 
 | Method | Route | Description |
 |---|---|---|
@@ -13,15 +22,16 @@ A URL shortener API built with ASP.NET Core (.NET 10), Entity Framework Core and
 
 ## Running locally
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Docker.
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download), Node.js 22+ and Docker.
 
 ```bash
-docker compose up -d                      # PostgreSQL on localhost:5432
-dotnet run --project src/UrlShortener.Api
+docker compose up -d                       # PostgreSQL on localhost:5432
+dotnet run --project src/UrlShortener.Api  # API on http://localhost:5259
+cd web && npm install && npm run dev       # front end on http://localhost:5173
 ```
 
-The API listens on `http://localhost:5259` and applies pending migrations on startup in Development.
-Example requests are in `src/UrlShortener.Api/UrlShortener.Api.http`.
+The API applies pending migrations on startup in Development. In development, Vite proxies `/links` requests to the API, so no CORS setup is needed.
+Example API requests are in `src/UrlShortener.Api/UrlShortener.Api.http`.
 
 ### Migrations
 
@@ -33,7 +43,9 @@ dotnet ef migrations add <Name> --project src/UrlShortener.Api --output-dir Data
 ## Tests
 
 ```bash
-dotnet test
+dotnet test                       # API integration tests (needs Docker)
+cd web && npm test                # front-end component tests (Vitest)
+cd e2e && npm install && npx playwright install chromium && npm test
 ```
 
-Integration tests start a disposable PostgreSQL container with [Testcontainers](https://dotnet.testcontainers.org/), so Docker must be running.
+The end-to-end tests start the API and the front end automatically; PostgreSQL must already be running (`docker compose up -d`).
