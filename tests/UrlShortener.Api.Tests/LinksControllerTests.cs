@@ -26,6 +26,21 @@ public class LinksControllerTests(ApiFactory factory)
         Assert.Equal($"/links/{link.Code}", response.Headers.Location?.AbsolutePath);
     }
 
+    [Fact]
+    public async Task Post_BehindCloudFront_UsesPublicHostInShortUrl()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/links")
+        {
+            Content = JsonContent.Create(new CreateLinkRequest("https://example.com/page")),
+        };
+        request.Headers.Add("X-Original-Host", "short.example");
+
+        var response = await _client.SendAsync(request);
+
+        var link = await response.Content.ReadFromJsonAsync<LinkResponse>();
+        Assert.StartsWith("http://short.example/", link?.ShortUrl);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("example.com")]

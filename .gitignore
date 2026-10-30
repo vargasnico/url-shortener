@@ -488,3 +488,7 @@ $RECYCLE.BIN/
 e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
+
+# AWS SAM build output and generated worker requirements
+infra/.aws-sam/
+worker/src/requirements.txt

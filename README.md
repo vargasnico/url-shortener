@@ -71,3 +71,26 @@ cd e2e && npm install && npx playwright install chromium && npm test
 ```
 
 The end-to-end tests start the API and the front end automatically; PostgreSQL must already be running (`docker compose up -d`).
+
+## Deploying to AWS
+
+The stack is defined with [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/) in `infra/template.yaml`:
+
+| Component | AWS service |
+|---|---|
+| Front end | S3 (private bucket) + CloudFront |
+| API | Lambda (.NET 10) behind an API Gateway HTTP API, routed through CloudFront |
+| Stats worker | Lambda (Python 3.13) triggered every minute by EventBridge Scheduler |
+| Database | RDS for PostgreSQL 17, credentials in Secrets Manager |
+
+CloudFront serves everything from one domain: `/links*`, `/health` and 6-character short codes go to the API, everything else to the front end.
+The API applies migrations on startup (`Database__MigrateOnStartup=true`).
+
+Requirements: [AWS CLI](https://aws.amazon.com/cli/) with credentials configured, [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), Docker, .NET 10 SDK, Node.js and uv.
+
+```powershell
+.\infra\deploy.ps1                       # builds, deploys the stack, uploads the front end
+.\infra\destroy.ps1                      # deletes everything (keeps a final database snapshot)
+```
+
+The first deploy takes around 10 minutes because of the database. The RDS instance runs continuously and is the main cost of the stack.

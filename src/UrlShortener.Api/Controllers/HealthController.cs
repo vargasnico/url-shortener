@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace UrlShortener.Api.Controllers;
 
-// Health check: a infraestrutura (load balancer, ECS, App Runner) usa para saber se a API está viva.
+// Health check: monitores e a infraestrutura (load balancer, ECS) usam para saber se a API está viva.
 [ApiController]
 [Route("health")]
 public class HealthController : ControllerBase

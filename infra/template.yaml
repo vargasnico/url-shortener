@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: URL shortener - ASP.NET Core API on Lambda, Python stats worker, PostgreSQL on RDS, React front end on S3 + CloudFront.
+
+# Visão geral do tráfego:
+#   navegador ─► CloudFront ─┬─► S3 (front React)              rota padrão
+#                            └─► API Gateway ─► Lambda (.NET)  /links*, /health, /{código de 6 caracteres}
+#   EventBridge Scheduler (1/min) ─► Lambda (Python) ─► RDS PostgreSQL ◄─ Lambda (.NET)
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the database and the Lambda functions (the deploy script uses the default VPC).
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two subnets in different availability zones.
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+
+Globals:
+  Function:
+    Architectures: [x86_64]
+    VpcConfig:
+      SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      SubnetIds: !Ref SubnetIds
+
+Resources:
+  # ---------- Rede ----------
+  # As Lambdas ficam na mesma VPC do banco. Elas não precisam de internet (só falam com o RDS),
+  # então não há NAT Gateway, que é caro.
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: URL shortener Lambda functions
+      VpcId: !Ref VpcId
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: URL shortener database - accepts connections only from the Lambda functions
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  # ---------- Banco ----------
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: URL shortener database credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "urlshortener"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: URL shortener database subnets
+      SubnetIds: !Ref SubnetIds
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    # Ao apagar a stack, guarda um snapshot em vez de perder os dados.
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: "17.11"
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: urlshortener
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 1
+
+  # ---------- API ----------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      # Limite de requisições: proteção básica contra abuso (encurtadores públicos são alvo de spam).
+      DefaultRouteSettings:
+        ThrottlingRateLimit: 20
+        ThrottlingBurstLimit: 40
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: URL shortener ASP.NET Core API
+      CodeUri: ../src/UrlShortener.Api
+      Handler: UrlShortener.Api
+      Runtime: dotnet10
+      MemorySize: 1024
+      Timeout: 15
+      Environment:
+        Variables:
+          ASPNETCORE_ENVIRONMENT: Production
+          Database__MigrateOnStartup: "true"
+          # A senha é resolvida no deploy a partir do Secrets Manager.
+          ConnectionStrings__Default: !Sub "Host=${Database.Endpoint.Address};Port=5432;Database=urlshortener;Username=urlshortener;Password={{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}};SSL Mode=Require;Maximum Pool Size=5"
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  # ---------- Worker ----------
+  StatsWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Aggregates click events into daily statistics
+      CodeUri: ../worker/src
+      Handler: stats_worker.lambda_handler.handler
+      Runtime: python3.13
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub "postgresql://urlshortener:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${Database.Endpoint.Address}:5432/urlshortener?sslmode=require"
+      Events:
+        EveryMinute:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(1 minute)
+
+  # ---------- Front ----------
+  FrontBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # O bucket é privado: só o CloudFront consegue ler (Origin Access Control).
+  FrontBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  FrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-front"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Copia o domínio público para X-Original-Host, porque o API Gateway recebe o próprio domínio
+  # no Host. A API usa esse cabeçalho para montar o shortUrl (ver Program.cs).
+  OriginalHostFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-original-host"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Forward the public host to the API
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          request.headers['x-original-host'] = { value: request.headers.host.value };
+          return request;
+        }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: URL shortener
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2and3
+        Origins:
+          - Id: front
+            DomainName: !GetAtt FrontBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            DomainName: !Sub "${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        # Rota padrão: arquivos do front, com cache.
+        DefaultCacheBehavior:
+          TargetOriginId: front
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          Compress: true
+        # Rotas da API: sem cache e repassando cabeçalhos, corpo e métodos.
+        # "/??????" casa exatamente 6 caracteres: os códigos curtos.
+        CacheBehaviors:
+          - PathPattern: /links*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt OriginalHostFunction.FunctionMetadata.FunctionARN
+          - PathPattern: /health
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: /??????
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+Outputs:
+  SiteUrl:
+    Description: Public URL of the application
+    Value: !Sub "https://${Distribution.DomainName}"
+  ApiUrl:
+    Description: API Gateway URL (direct, bypassing CloudFront)
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  FrontBucketName:
+    Value: !Ref FrontBucket
+  DistributionId:
+    Value: !Ref Distribution

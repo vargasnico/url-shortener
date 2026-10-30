@@ -9,6 +9,7 @@ URL shortener: ASP.NET Core (.NET 10) API with PostgreSQL (EF Core), a React fro
 - `web/` — React + TypeScript (Vite), Vitest + Testing Library
 - `worker/` — Python 3.13 (uv, psycopg 3) aggregating `click_events` into `link_daily_stats`; pytest + Testcontainers
 - `e2e/` — Playwright end-to-end tests
+- `infra/` — AWS SAM template and deploy scripts (Lambda, API Gateway, RDS, S3, CloudFront)
 
 The schema is owned by EF Core migrations. After adding a migration, regenerate `worker/tests/schema.sql`
 (`dotnet ef migrations script --project src/UrlShortener.Api -o worker/tests/schema.sql`).
