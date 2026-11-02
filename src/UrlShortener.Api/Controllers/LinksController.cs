@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrlShortener.Api.Dtos;
 using UrlShortener.Api.Models;
 using UrlShortener.Api.Repositories;
@@ -12,8 +13,9 @@ public class LinksController(ILinkRepository repository, IClickRepository clicks
 {
     private const int MaxAttempts = 5;
 
-    // POST /links
+    // POST /links (limite próprio por IP, além do global: ver RateLimiting.cs)
     [HttpPost]
+    [EnableRateLimiting(RateLimiting.CreatePolicy)]
     public async Task<ActionResult<LinkResponse>> Create(CreateLinkRequest request, CancellationToken cancellationToken)
     {
         if (!IsValidHttpUrl(request.Url))

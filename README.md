@@ -18,6 +18,19 @@ Every redirect records a row in `click_events`. The stats worker periodically ag
 
 The database schema is owned by the API's EF Core migrations; the worker only reads and writes rows.
 
+## Rate limiting
+
+The API limits requests per client IP so a single client cannot spam links or exhaust the free hosting quota.
+Over the limit it returns `429 Too Many Requests` with a `Retry-After` header.
+
+| Setting | Default | Applies to |
+|---|---|---|
+| `RateLimiting:CreatePerMinute` | 10 | `POST /links` |
+| `RateLimiting:RequestsPerMinute` | 120 | Every API request (redirects, stats, health) |
+
+Static front-end files don't count. Override the limits with environment variables, e.g. `RateLimiting__CreatePerMinute=20`.
+The limits are kept in memory per instance, and requests spread across many IPs are not blocked.
+
 ## API endpoints
 
 | Method | Route | Description |

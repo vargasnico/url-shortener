@@ -14,8 +14,13 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public Task InitializeAsync() => _postgres.StartAsync();
 
+    // Limites altos: todos os testes vêm do mesmo "IP" e não devem esbarrar no rate limiting
+    // (que tem testes próprios em RateLimitingTests).
     protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.UseSetting("ConnectionStrings:Default", _postgres.GetConnectionString());
+        builder
+            .UseSetting("ConnectionStrings:Default", _postgres.GetConnectionString())
+            .UseSetting("RateLimiting:CreatePerMinute", "10000")
+            .UseSetting("RateLimiting:RequestsPerMinute", "10000");
 
     public new async Task DisposeAsync()
     {
