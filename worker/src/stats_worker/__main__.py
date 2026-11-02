@@ -44,7 +44,7 @@ def main() -> None:
         log.info("Aggregated %s click events", run_once(settings))
         return
 
-    # SIGTERM é o que o Docker/ECS manda ao parar o container: termina o ciclo atual e sai.
+    # SIGTERM é o que o Docker manda ao parar o container: termina o ciclo atual e sai.
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())

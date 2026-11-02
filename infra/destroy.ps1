@@ -1,18 +1,13 @@
-# Apaga tudo o que o deploy criou, para parar a cobrança.
-# O banco deixa um snapshot final (DeletionPolicy: Snapshot no template); apague-o no console
-# do RDS se não quiser guardar os dados.
+﻿# Apaga tudo o que o deploy.ps1 criou no Azure, inclusive o banco e os dados.
+#
+#   .\infra\destroy.ps1
 param(
-    [string]$Region = "us-east-1",
-    [string]$StackName = "url-shortener"
+    [string]$ResourceGroup = "url-shortener"
 )
 
 $ErrorActionPreference = "Stop"
 
-# O CloudFormation não apaga bucket com arquivos: esvazia antes.
-$bucket = aws cloudformation describe-stacks --region $Region --stack-name $StackName `
-    --query "Stacks[0].Outputs[?OutputKey=='FrontBucketName'].OutputValue" --output text
-if ($bucket -and $bucket -ne "None") {
-    aws s3 rm "s3://$bucket" --recursive --region $Region
-}
-
-sam delete --stack-name $StackName --region $Region --no-prompts
+Write-Host "Deleting resource group '$ResourceGroup' (database included)..." -ForegroundColor Yellow
+az group delete --name $ResourceGroup --yes
+if ($LASTEXITCODE -ne 0) { throw "Failed to delete resource group." }
+Write-Host "Deleted." -ForegroundColor Green

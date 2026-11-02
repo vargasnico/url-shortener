@@ -1,4 +1,3 @@
-using Amazon.Lambda.AspNetCoreServer.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using UrlShortener.Api;
@@ -8,20 +7,13 @@ using UrlShortener.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Na AWS a API roda dentro de uma Lambda atrás do API Gateway (HTTP API).
-// Fora da Lambda (local, testes) esta linha não faz nada e o Kestrel continua normal.
-builder.Services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
-
-// O CloudFront repassa o domínio público original neste cabeçalho (ver infra/template.yaml).
-// Sem isso, o Request.Host seria o domínio interno do API Gateway e o shortUrl sairia errado.
-// X-Forwarded-Proto: no Azure App Service o HTTPS termina no balanceador e a app recebe HTTP;
-// o cabeçalho informa o esquema original, para o shortUrl sair com https://.
+// No Azure App Service o HTTPS termina no balanceador e a app recebe HTTP puro.
+// X-Forwarded-Proto: informa o esquema original, para o shortUrl sair com https://.
 // X-Forwarded-For: IP real do cliente, usado no limite de requisições. Só a última entrada é usada
 // (a que o proxy adicionou), então o cliente não consegue trocar de IP mandando o cabeçalho.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
-    options.ForwardedHostHeaderName = "X-Original-Host";
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
