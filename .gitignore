@@ -492,3 +492,6 @@ e2e/playwright-report/
 # AWS SAM build output and generated worker requirements
 infra/.aws-sam/
 worker/src/requirements.txt
+
+# Azure deploy build output
+infra/azure/.build/

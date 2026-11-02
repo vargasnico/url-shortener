@@ -13,9 +13,11 @@ builder.Services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
 
 // O CloudFront repassa o domínio público original neste cabeçalho (ver infra/template.yaml).
 // Sem isso, o Request.Host seria o domínio interno do API Gateway e o shortUrl sairia errado.
+// X-Forwarded-Proto: no Azure App Service o HTTPS termina no balanceador e a app recebe HTTP;
+// o cabeçalho informa o esquema original, para o shortUrl sair com https://.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedHost;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
     options.ForwardedHostHeaderName = "X-Original-Host";
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
@@ -55,6 +57,12 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Databas
 }
 
 app.UseHttpsRedirection();
+
+// No Azure o front (build do Vite) é publicado em wwwroot e servido pela própria API, num domínio só.
+// Localmente não existe wwwroot e estes middlewares não fazem nada (o Vite serve o front).
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthorization();
 app.MapControllers();
 
