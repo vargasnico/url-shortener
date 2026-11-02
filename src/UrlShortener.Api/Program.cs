@@ -1,6 +1,7 @@
 using Amazon.Lambda.AspNetCoreServer.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using UrlShortener.Api;
 using UrlShortener.Api.Data;
 using UrlShortener.Api.Repositories;
 using UrlShortener.Api.Services;
@@ -15,9 +16,11 @@ builder.Services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
 // Sem isso, o Request.Host seria o domínio interno do API Gateway e o shortUrl sairia errado.
 // X-Forwarded-Proto: no Azure App Service o HTTPS termina no balanceador e a app recebe HTTP;
 // o cabeçalho informa o esquema original, para o shortUrl sair com https://.
+// X-Forwarded-For: IP real do cliente, usado no limite de requisições. Só a última entrada é usada
+// (a que o proxy adicionou), então o cliente não consegue trocar de IP mandando o cabeçalho.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
     options.ForwardedHostHeaderName = "X-Original-Host";
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
@@ -33,6 +36,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
 builder.Services.AddScoped<ILinkRepository, EfLinkRepository>();
 builder.Services.AddScoped<IClickRepository, EfClickRepository>();
 builder.Services.AddSingleton<ICodeGenerator, RandomCodeGenerator>();
+builder.Services.AddLinkRateLimiting(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
@@ -63,6 +67,8 @@ app.UseHttpsRedirection();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Depois dos arquivos estáticos: carregar o front não conta no limite, só as chamadas à API.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 
