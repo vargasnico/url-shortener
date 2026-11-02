@@ -6,6 +6,13 @@ export interface Link {
   createdAt: string
 }
 
+// LinkStatsResponse no C#. "daily" só traz os dias que tiveram cliques (date no formato YYYY-MM-DD, UTC).
+export interface LinkStats {
+  code: string
+  totalClicks: number
+  daily: { date: string; clicks: number }[]
+}
+
 // Formato de erro padrão do ASP.NET Core (RFC 9457 "problem details").
 interface ProblemDetails {
   title?: string
@@ -23,6 +30,16 @@ export async function createLink(url: string): Promise<Link> {
 
   if (!response.ok) {
     throw new ApiError(await readErrorMessage(response))
+  }
+
+  return response.json()
+}
+
+export async function getLinkStats(code: string): Promise<LinkStats> {
+  const response = await fetch(`/links/${encodeURIComponent(code)}/stats`)
+
+  if (!response.ok) {
+    throw new ApiError(response.status === 404 ? 'Link not found.' : await readErrorMessage(response))
   }
 
   return response.json()

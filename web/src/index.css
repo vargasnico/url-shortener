@@ -142,10 +142,13 @@ ul {
 }
 
 li {
+  padding: 12px 14px;
+}
+
+.link-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
 }
 
 li + li {
@@ -159,7 +162,14 @@ li + li {
   min-width: 0;
 }
 
+.link-row button {
+  flex-shrink: 0;
+}
+
 .link-text a {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--accent);
   font-weight: 600;
   text-decoration: none;
@@ -171,6 +181,59 @@ li + li {
   font-size: 0.875rem;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.stats {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.stats-total {
+  margin: 0 0 8px;
+}
+
+.stats-total strong {
+  font-size: 1.5rem;
+}
+
+.stats-chart {
+  display: flex;
+  gap: 6px;
+  height: 96px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-chart li {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0;
+  border: none;
+}
+
+.stats-chart .bar {
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+}
+
+.stats-chart .day {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.stats-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .visually-hidden {
