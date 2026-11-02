@@ -94,3 +94,30 @@ Requirements: [AWS CLI](https://aws.amazon.com/cli/) with credentials configured
 ```
 
 The first deploy takes around 10 minutes because of the database. The RDS instance runs continuously and is the main cost of the stack.
+
+## Deploying to Azure (Azure for Students)
+
+An alternative stack that needs no credit card: an [Azure for Students](https://azure.microsoft.com/free/students) subscription gives US$100 of credit for 12 months.
+It is defined with [Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/) in `infra/azure/main.bicep`:
+
+| Component | Azure service | Cost |
+|---|---|---|
+| API + front end | App Service, Free (F1) Linux plan; the API serves the Vite build from `wwwroot` | Free |
+| Stats worker | Azure Functions, Flex Consumption (Python 3.13), timer trigger every minute | Within the free monthly grant |
+| Database | Azure Database for PostgreSQL Flexible Server 17, Burstable B1MS, 32 GB | Uses credit when not covered by a free offer |
+| Function storage | Storage account (timer state and deployment package) | A few cents |
+
+Requirements: [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), .NET 10 SDK, Node.js and uv.
+
+```powershell
+az login                                 # sign in with the Azure for Students account
+.\infra\azure\deploy.ps1                 # creates everything in brazilsouth and prints the site URL
+.\infra\azure\deploy.ps1 -Location eastus2   # if your subscription does not allow brazilsouth
+.\infra\azure\destroy.ps1                # deletes the resource group, database included
+```
+
+The first deploy takes around 10 minutes because of the database. Each deploy generates a new database password and updates the API and the worker with it.
+
+Limits of the free plan: the App Service F1 plan has 60 CPU minutes per day and no "Always On", so the first request after ~20 minutes idle takes a few seconds.
+The database firewall allows connections from Azure services (needed without a virtual network); access still requires the password.
+To save credit when you are not using it, stop the database with `az postgres flexible-server stop` (Azure starts it again automatically after 7 days).

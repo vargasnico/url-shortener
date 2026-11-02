@@ -41,6 +41,21 @@ public class LinksControllerTests(ApiFactory factory)
         Assert.StartsWith("http://short.example/", link?.ShortUrl);
     }
 
+    [Fact]
+    public async Task Post_BehindHttpsProxy_UsesHttpsInShortUrl()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/links")
+        {
+            Content = JsonContent.Create(new CreateLinkRequest("https://example.com/page")),
+        };
+        request.Headers.Add("X-Forwarded-Proto", "https");
+
+        var response = await _client.SendAsync(request);
+
+        var link = await response.Content.ReadFromJsonAsync<LinkResponse>();
+        Assert.StartsWith("https://", link?.ShortUrl);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("example.com")]
