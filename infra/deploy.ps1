@@ -1,16 +1,16 @@
-# Deploy completo na AWS: infraestrutura + API + worker + front.
-# Pré-requisitos: AWS CLI configurada (aws configure), SAM CLI, Docker, .NET 10 SDK, Node.js e uv.
+# Deploy completo no Azure: infraestrutura + API com o front + worker.
+# Pré-requisitos: Azure CLI logada (az login), .NET 10 SDK, Node.js e uv.
 #
-#   .\infra\deploy.ps1                      # us-east-1
-#   .\infra\deploy.ps1 -Region sa-east-1
+#   .\infra\deploy.ps1                              # brazilsouth
+#   .\infra\deploy.ps1 -Location eastus2
 param(
-    [string]$Region = "us-east-1",
-    [string]$StackName = "url-shortener"
+    [string]$Location = "brazilsouth",
+    [string]$ResourceGroup = "url-shortener"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$env:SAM_CLI_TELEMETRY = "0"
+$build = "$PSScriptRoot/.build"
 
 function Invoke-Checked {
     param([scriptblock]$Command)
@@ -18,52 +18,82 @@ function Invoke-Checked {
     if ($LASTEXITCODE -ne 0) { throw "Command failed ($LASTEXITCODE): $Command" }
 }
 
-Write-Host "==> Account" -ForegroundColor Cyan
-Invoke-Checked { aws sts get-caller-identity --query Arn --output text }
-
-# A VPC padrão já existe em toda conta e tem subnets em várias zonas de disponibilidade.
-Write-Host "==> Default VPC" -ForegroundColor Cyan
-$vpcId = aws ec2 describe-vpcs --region $Region --filters Name=is-default,Values=true --query "Vpcs[0].VpcId" --output text
-if (-not $vpcId -or $vpcId -eq "None") { throw "No default VPC in $Region." }
-$subnetIds = (aws ec2 describe-subnets --region $Region --filters Name=vpc-id,Values=$vpcId --query "Subnets[].SubnetId" --output text) -split "\s+" -join ","
-Write-Host "$vpcId ($subnetIds)"
-
-Write-Host "==> Worker requirements" -ForegroundColor Cyan
-Push-Location "$root/worker"
-Invoke-Checked { uv export --no-dev --no-hashes --no-emit-project --output-file src/requirements.txt --quiet }
-Pop-Location
-
-# --use-container: compila dentro de containers Linux iguais aos da Lambda.
-# Necessário porque o psycopg tem partes nativas que precisam ser de Linux, não de Windows.
-Write-Host "==> Build" -ForegroundColor Cyan
-Invoke-Checked { sam build --template-file "$root/infra/template.yaml" --build-dir "$root/infra/.aws-sam/build" --use-container }
-
-Write-Host "==> Deploy stack (the first run creates the database and takes ~10 minutes)" -ForegroundColor Cyan
-Invoke-Checked {
-    sam deploy `
-        --template-file "$root/infra/.aws-sam/build/template.yaml" `
-        --stack-name $StackName `
-        --region $Region `
-        --resolve-s3 `
-        --capabilities CAPABILITY_IAM `
-        --no-confirm-changeset `
-        --no-fail-on-empty-changeset `
-        --parameter-overrides "VpcId=$vpcId" "SubnetIds=$subnetIds"
+# No PowerShell 5, tanto o Compress-Archive quanto o ZipFile.CreateFromDirectory gravam caminhos
+# com "\", que viram nomes de arquivo estranhos no Linux do Azure. Por isso as entradas são criadas à mão.
+function New-Zip {
+    param([string]$Source, [string]$Destination)
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $Source = (Resolve-Path $Source).Path
+    if (Test-Path $Destination) { Remove-Item $Destination }
+    $zip = [IO.Compression.ZipFile]::Open($Destination, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in Get-ChildItem -Recurse -File $Source) {
+            $entry = $file.FullName.Substring($Source.Length + 1).Replace("\", "/")
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entry) | Out-Null
+        }
+    } finally {
+        $zip.Dispose()
+    }
 }
 
-$outputs = aws cloudformation describe-stacks --region $Region --stack-name $StackName --query "Stacks[0].Outputs" --output json | ConvertFrom-Json
-$bucket = ($outputs | Where-Object OutputKey -eq "FrontBucketName").OutputValue
-$distributionId = ($outputs | Where-Object OutputKey -eq "DistributionId").OutputValue
-$siteUrl = ($outputs | Where-Object OutputKey -eq "SiteUrl").OutputValue
+Write-Host "==> Subscription" -ForegroundColor Cyan
+Invoke-Checked { az account show --query "{name:name, id:id}" --output table }
+
+# Assinaturas novas vêm com poucos provedores registrados. Se já estiver registrado, é instantâneo.
+Write-Host "==> Resource providers" -ForegroundColor Cyan
+foreach ($provider in "Microsoft.Web", "Microsoft.DBforPostgreSQL", "Microsoft.Storage") {
+    Invoke-Checked { az provider register --namespace $provider --wait }
+}
+
+Write-Host "==> Resource group" -ForegroundColor Cyan
+Invoke-Checked { az group create --name $ResourceGroup --location $Location --output none }
+
+# Senha nova a cada deploy: o mesmo deploy atualiza o banco, a API e o worker juntos.
+# Só letras e números, para poder ir direto na URL de conexão do worker.
+$chars = [char[]]"abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+$password = "Aa1" + (-join (1..29 | ForEach-Object { $chars | Get-Random }))
+
+Write-Host "==> Infrastructure (the first run creates the database and takes ~10 minutes)" -ForegroundColor Cyan
+$outputs = az deployment group create `
+    --resource-group $ResourceGroup `
+    --template-file "$PSScriptRoot/main.bicep" `
+    --parameters "dbAdminPassword=$password" `
+    --query properties.outputs `
+    --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw "Infrastructure deployment failed." }
+$webApp = $outputs.webAppName.value
+$functionApp = $outputs.functionAppName.value
+
+if (Test-Path $build) { Remove-Item -Recurse -Force $build }
+New-Item -ItemType Directory $build | Out-Null
 
 Write-Host "==> Front end" -ForegroundColor Cyan
 Push-Location "$root/web"
 Invoke-Checked { npm ci --silent }
 Invoke-Checked { npm run build --silent }
 Pop-Location
-Invoke-Checked { aws s3 sync "$root/web/dist" "s3://$bucket" --delete --region $Region }
-# Limpa o cache do CloudFront para servir a versão nova do front.
-Invoke-Checked { aws cloudfront create-invalidation --distribution-id $distributionId --paths "/*" --query "Invalidation.Id" --output text }
+
+Write-Host "==> API" -ForegroundColor Cyan
+Invoke-Checked { dotnet publish "$root/src/UrlShortener.Api" --configuration Release --output "$build/api" }
+# O front vai junto, em wwwroot: a API serve os arquivos estáticos (ver Program.cs).
+Copy-Item -Recurse "$root/web/dist" "$build/api/wwwroot"
+New-Zip "$build/api" "$build/api.zip"
+Invoke-Checked { az webapp deploy --resource-group $ResourceGroup --name $webApp --src-path "$build/api.zip" --type zip --output none }
+
+Write-Host "==> Worker" -ForegroundColor Cyan
+New-Item -ItemType Directory "$build/worker" | Out-Null
+Copy-Item -Recurse "$root/worker/src/stats_worker" "$build/worker/stats_worker"
+Copy-Item "$root/worker/src/function_app.py", "$root/worker/src/host.json" "$build/worker"
+Push-Location "$root/worker"
+Invoke-Checked { uv export --no-dev --no-hashes --no-emit-project --output-file "$build/worker/requirements.txt" --quiet }
+Pop-Location
+# azure-functions só existe no Azure, não é dependência do worker local.
+Add-Content "$build/worker/requirements.txt" "azure-functions"
+Get-ChildItem -Recurse -Directory -Filter __pycache__ "$build/worker" | Remove-Item -Recurse -Force
+New-Zip "$build/worker" "$build/worker.zip"
+# O build remoto instala as dependências no Linux do Azure (o psycopg tem partes nativas).
+Invoke-Checked { az functionapp deployment source config-zip --resource-group $ResourceGroup --name $functionApp --src "$build/worker.zip" --build-remote true --output none }
 
 Write-Host ""
-Write-Host "Deployed: $siteUrl" -ForegroundColor Green
+Write-Host "Deployed: $($outputs.siteUrl.value)" -ForegroundColor Green
+Write-Host "The first request after a while takes a few seconds: the free plan puts the app to sleep." -ForegroundColor DarkGray

@@ -5,7 +5,7 @@ DEFAULT_DATABASE_URL = "postgresql://urlshortener:urlshortener@localhost:5432/ur
 
 
 # Configuração vem de variáveis de ambiente (padrão "12-factor"): o mesmo código roda
-# local, no Docker e na AWS, mudando só o ambiente.
+# local, no Docker e no Azure, mudando só o ambiente.
 @dataclass(frozen=True)
 class Settings:
     database_url: str

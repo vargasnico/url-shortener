@@ -85,33 +85,10 @@ cd e2e && npm install && npx playwright install chromium && npm test
 
 The end-to-end tests start the API and the front end automatically; PostgreSQL must already be running (`docker compose up -d`).
 
-## Deploying to AWS
-
-The stack is defined with [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/) in `infra/template.yaml`:
-
-| Component | AWS service |
-|---|---|
-| Front end | S3 (private bucket) + CloudFront |
-| API | Lambda (.NET 10) behind an API Gateway HTTP API, routed through CloudFront |
-| Stats worker | Lambda (Python 3.13) triggered every minute by EventBridge Scheduler |
-| Database | RDS for PostgreSQL 17, credentials in Secrets Manager |
-
-CloudFront serves everything from one domain: `/links*`, `/health` and 6-character short codes go to the API, everything else to the front end.
-The API applies migrations on startup (`Database__MigrateOnStartup=true`).
-
-Requirements: [AWS CLI](https://aws.amazon.com/cli/) with credentials configured, [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), Docker, .NET 10 SDK, Node.js and uv.
-
-```powershell
-.\infra\deploy.ps1                       # builds, deploys the stack, uploads the front end
-.\infra\destroy.ps1                      # deletes everything (keeps a final database snapshot)
-```
-
-The first deploy takes around 10 minutes because of the database. The RDS instance runs continuously and is the main cost of the stack.
-
 ## Deploying to Azure (Azure for Students)
 
-An alternative stack that needs no credit card: an [Azure for Students](https://azure.microsoft.com/free/students) subscription gives US$100 of credit for 12 months.
-It is defined with [Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/) in `infra/azure/main.bicep`:
+The app runs on an [Azure for Students](https://azure.microsoft.com/free/students) subscription, which needs no credit card and gives US$100 of credit for 12 months.
+The stack is defined with [Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/) in `infra/main.bicep`:
 
 | Component | Azure service | Cost |
 |---|---|---|
@@ -124,12 +101,12 @@ Requirements: [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cl
 
 ```powershell
 az login                                 # sign in with the Azure for Students account
-.\infra\azure\deploy.ps1                 # creates everything in brazilsouth and prints the site URL
-.\infra\azure\deploy.ps1 -Location eastus2   # if your subscription does not allow brazilsouth
-.\infra\azure\destroy.ps1                # deletes the resource group, database included
+.\infra\deploy.ps1                       # creates everything in brazilsouth and prints the site URL
+.\infra\deploy.ps1 -Location eastus2     # if your subscription does not allow brazilsouth
+.\infra\destroy.ps1                      # deletes the resource group, database included
 ```
 
-The first deploy takes around 10 minutes because of the database. Each deploy generates a new database password and updates the API and the worker with it.
+The first deploy takes around 10 minutes because of the database. The API applies migrations on startup (`Database__MigrateOnStartup=true`). Each deploy generates a new database password and updates the API and the worker with it.
 
 Limits of the free plan: the App Service F1 plan has 60 CPU minutes per day and no "Always On", so the first request after ~20 minutes idle takes a few seconds.
 The database firewall allows connections from Azure services (needed without a virtual network); access still requires the password.
